@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GeoGuesser AI</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --nyc:     #D85A30;
+    --tokyo:   #D4537E;
+    --istanbul:#1D9E75;
+    --bg:      #FAFAF8;
+    --surface: #F1EFE8;
+    --border:  rgba(0,0,0,0.10);
+    --text:    #18181A;
+    --muted:   #6B6B68;
+    --card:    #FFFFFF;
+    --radius:  14px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:     #18181A;
+      --surface:#222220;
+      --border: rgba(255,255,255,0.10);
+      --text:   #F1EFE8;
+      --muted:  #888780;
+      --card:   #222220;
+    }
+    .pill-nyc     { background:#4A1B0C; color:#F0997B; }
+    .pill-tokyo   { background:#4B1528; color:#ED93B1; }
+    .pill-istanbul{ background:#04342C; color:#5DCAA5; }
+    .upload-zone:hover, .upload-zone.drag-over { background:#2A1A15 !important; }
+    .reasoning-box { background: #1c1c1a; }
+    .error-msg { background:#501313; color:#F7C1C1; border-color:#A32D2D; }
+    .reset-btn { color: #888780; }
+    .reset-btn:hover { color: #F1EFE8; }
+    .shimmer-line { background: linear-gradient(90deg, #2c2c2a 25%, #333330 50%, #2c2c2a 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+  }
+
+  html, body {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 3rem 1.5rem 4rem;
+  }
+
+  #app {
+    width: 100%;
+    max-width: 640px;
+  }
+
+  .header { margin-bottom: 2.5rem; }
+
+  .header h1 {
+    font-size: 2.4rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    margin-bottom: 0.4rem;
+    color: var(--text);
+  }
+
+  .header h1 .accent { color: var(--nyc); }
+
+  .header .subtitle {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .city-pills {
+    display: flex;
+    gap: 8px;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 100px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .pill-nyc     { background:#FAECE7; color:#993C1D; }
+  .pill-tokyo   { background:#FBEAF0; color:#993556; }
+  .pill-istanbul{ background:#E1F5EE; color:#0F6E56; }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    position: relative;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    background: var(--surface);
+    transition: border-color 0.2s, background 0.2s;
+    margin-bottom: 1.25rem;
+  }
+
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--nyc);
+    background: #FAECE714;
+  }
+
+  .upload-zone input {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+
+  .upload-icon {
+    font-size: 2.4rem;
+    margin-bottom: 0.75rem;
+    opacity: 0.45;
+  }
+
+  .upload-label {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.3rem;
+  }
+
+  .upload-sub {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  .image-preview {
+    position: relative;
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+    border: 1px solid var(--border);
+    cursor: pointer;
+  }
+
+  .image-preview img {
+    width: 100%;
+    max-height: 340px;
+    object-fit: cover;
+    display: block;
+  }
+
+  .image-preview-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+
+  .image-preview:hover .image-preview-overlay {
+    background: rgba(0,0,0,0.35);
+  }
+
+  .image-preview-overlay span {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.2s;
+    letter-spacing: 0.02em;
+  }
+
+  .image-preview:hover .image-preview-overlay span { opacity: 1; }
+
+  .btn-submit {
+    width: 100%;
+    padding: 15px;
+    background: var(--text);
+    color: var(--bg);
+    border: none;
+    border-radius: 12px;
+    
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: opacity 0.2s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .btn-submit:hover:not(:disabled) { opacity: 0.82; }
+  .btn-submit:active:not(:disabled) { transform: scale(0.99); }
+  .btn-submit:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .results-section { margin-top: 2.5rem; }
+
+  .result-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+
+  .result-header {
+    display: flex;
+    gap: 14px;
+    padding: 1.1rem 1.25rem;
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .result-thumb {
+    width: 68px;
+    height: 68px;
+    border-radius: 8px;
+    object-fit: cover;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+  }
+
+  .result-meta { flex: 1; min-width: 0; }
+
+  .result-filename {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    margin-bottom: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .result-verdict {
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .verdict-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .result-confidence {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  .bar-section { padding: 1rem 1.25rem; }
+
+  .bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .bar-row:last-child { margin-bottom: 0; }
+
+  .bar-label {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    width: 56px;
+    flex-shrink: 0;
+  }
+
+  .bar-track {
+    flex: 1;
+    height: 8px;
+    background: var(--surface);
+    border-radius: 100px;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    border-radius: 100px;
+    width: 0%;
+    transition: width 0.7s cubic-bezier(0.34, 1.3, 0.64, 1);
+  }
+
+  .bar-pct {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    width: 38px;
+    text-align: right;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+
+  .loading-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    background: var(--surface);
+    margin-bottom: 1.25rem;
+  }
+
+  .shimmer-line {
+    height: 12px;
+    background: linear-gradient(90deg, var(--border) 25%, var(--bg) 50%, var(--border) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .error-msg {
+    background: #FCEBEB;
+    color: #A32D2D;
+    border: 1px solid #F09595;
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    font-size: 13px;
+    font-family: 'Courier New', Courier, monospace;
+    margin-top: 0.75rem;
+  }
+
+
+
+  .spinner { animation: spin 0.8s linear infinite; display: inline-block; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="header">
+    <h1>GeoGuesser <span class="accent">AI</span></h1>
+    <p class="subtitle">ResNet50 · Street-level image classification</p>
+    <div class="city-pills">
+      <span class="pill pill-nyc">New York City</span>
+      <span class="pill pill-tokyo">Tokyo</span>
+      <span class="pill pill-istanbul">Istanbul</span>
+    </div>
+  </div>
+
+  <div id="upload-zone" class="upload-zone">
+    <input type="file" id="file-input" accept="image/jpeg,.jpg" />
+    <div class="upload-icon">📍</div>
+    <div class="upload-label">Drop a street image here</div>
+    <div class="upload-sub">JPG files only</div>
+  </div>
+
+  <div id="image-preview" class="image-preview" style="display:none">
+    <img id="preview-img" src="" alt="preview" />
+    <div class="image-preview-overlay"><span>Change image</span></div>
+    <input type="file" id="file-input-overlay" accept="image/jpeg,.jpg" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;" />
+  </div>
+
+  <button id="submit-btn" class="btn-submit" disabled>
+    Guess Location
+  </button>
+
+  <div id="error-area"></div>
+  <div id="results-section" class="results-section"></div>
+
+</div>
+
+<script>
+  const CITIES = ['New York City', 'Tokyo', 'Istanbul'];
+  const COLORS  = { 'New York City': '#D85A30', 'Tokyo': '#D4537E', 'Istanbul': '#1D9E75' };
+  const ABBR    = { 'New York City': 'NYC', 'Tokyo': 'TKY', 'Istanbul': 'IST' };
+
+  let currentFile = null;
+
+  const uploadZone      = document.getElementById('upload-zone');
+  const fileInput       = document.getElementById('file-input');
+  const fileInputOverlay= document.getElementById('file-input-overlay');
+  const imagePreview    = document.getElementById('image-preview');
+  const previewImg      = document.getElementById('preview-img');
+  const submitBtn       = document.getElementById('submit-btn');
+  const resultsArea     = document.getElementById('results-section');
+  const errorArea       = document.getElementById('error-area');
+
+  fileInput.addEventListener('change', e => { if (e.target.files[0]) setFile(e.target.files[0]); });
+  fileInputOverlay.addEventListener('change', e => { if (e.target.files[0]) setFile(e.target.files[0]); });
+
+  uploadZone.addEventListener('dragover',  e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+    const f = [...e.dataTransfer.files].find(f => f.type === 'image/jpeg' || f.name.toLowerCase().endsWith('.jpg'));
+    if (f) setFile(f);
+  });
+
+  function setFile(f) {
+    currentFile = f;
+    const url = URL.createObjectURL(f);
+    previewImg.src = url;
+    uploadZone.style.display = 'none';
+    imagePreview.style.display = 'block';
+    submitBtn.disabled = false;
+    resultsArea.innerHTML = '';
+    errorArea.innerHTML = '';
+  }
+
+  submitBtn.addEventListener('click', analyzeImage);
+
+  async function analyzeImage() {
+    if (!currentFile) return;
+    errorArea.innerHTML = '';
+    resultsArea.innerHTML = '';
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = 'Analyzing…';
+
+    const placeholder = shimmerCard();
+    resultsArea.appendChild(placeholder);
+
+    try {
+      const formData = new FormData();
+      formData.append('image', currentFile);
+
+      const res = await fetch('http://127.0.0.1:5000/predict', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Server error ${res.status}`);
+      }
+
+      const parsed  = await res.json();
+      const thumbUrl = URL.createObjectURL(currentFile);
+      const card     = buildCard(currentFile.name, thumbUrl, parsed);
+      placeholder.replaceWith(card);
+      setTimeout(() => animateBars(card, parsed.probabilities), 60);
+
+    } catch (err) {
+      placeholder.innerHTML = `<div class="error-msg">Error: ${err.message}</div>`;
+    }
+
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = 'Guess Location';
+
+
+  }
+
+  function shimmerCard() {
+    const d = document.createElement('div');
+    d.className = 'loading-card';
+    d.innerHTML = `
+      <div class="shimmer-line" style="width:55%;height:16px;margin-bottom:16px"></div>
+      <div class="shimmer-line" style="width:100%"></div>
+      <div class="shimmer-line" style="width:80%"></div>
+      <div class="shimmer-line" style="width:65%"></div>`;
+    return d;
+  }
+
+  function buildCard(filename, thumbUrl, r) {
+    const city  = r.predicted_city;
+    const color = COLORS[city];
+    const pct   = Math.round(r.confidence * 100);
+    const probs = r.probabilities;
+
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.innerHTML = `
+      <div class="result-header">
+        <img src="${thumbUrl}" class="result-thumb" alt="analysed image" />
+        <div class="result-meta">
+          <div class="result-filename">${filename}</div>
+          <div class="result-verdict">
+            <span class="verdict-dot" style="background:${color}"></span>
+            ${city}
+          </div>
+          <div class="result-confidence">confidence: ${pct}%</div>
+        </div>
+      </div>
+      <div class="bar-section">
+        ${CITIES.map(c => `
+        <div class="bar-row">
+          <span class="bar-label">${ABBR[c]}</span>
+          <div class="bar-track">
+            <div class="bar-fill" data-pct="${probs[c] || 0}" style="background:${COLORS[c]}"></div>
+          </div>
+          <span class="bar-pct">${Math.round((probs[c] || 0) * 100)}%</span>
+        </div>`).join('')}
+      </div>
+    `;
+    return card;
+  }
+
+  function animateBars(card, probs) {
+    card.querySelectorAll('.bar-fill').forEach(bar => {
+      bar.style.width = Math.round(parseFloat(bar.dataset.pct) * 100) + '%';
+    });
+  }
+
+</script>
+</body>
+</html>
